@@ -1,14 +1,19 @@
 # Vikey.exe: tray app + hooks. Built only on Windows (MSVC).
 # One version for every platform: project.yml's MARKETING_VERSION, unless -DVIKEY_VERSION overrides it.
-unset(VIKEY_VERSION CACHE)   # never a stale cached value
-if(NOT VIKEY_VERSION)
+if(NOT DEFINED VIKEY_VERSION OR VIKEY_VERSION STREQUAL "")
   file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/../../project.yml" _mv REGEX "MARKETING_VERSION: \"")
   string(REGEX REPLACE ".*MARKETING_VERSION: \"([^\"]+)\".*" "\\1" VIKEY_VERSION "${_mv}")
 endif()
 message(STATUS "Vikey version ${VIKEY_VERSION}")
 add_executable(vikey WIN32 main.cpp Core.cpp Cvnss.cpp Prefs.cpp Site.cpp Settings.cpp Emoji.cpp Updater.cpp third_party/tweetnacl.c Vikey.rc)
 set_source_files_properties(third_party/tweetnacl.c PROPERTIES COMPILE_FLAGS "/w")
-set_target_properties(vikey PROPERTIES OUTPUT_NAME Vikey)
+option(BILAKEY_BRAND "Build BilaKey Windows fork rather than upstream Vikey app" OFF)
+if(BILAKEY_BRAND)
+  set_target_properties(vikey PROPERTIES OUTPUT_NAME BilaKey)
+  target_compile_definitions(vikey PRIVATE BILAKEY_BUILD=1)
+else()
+  set_target_properties(vikey PROPERTIES OUTPUT_NAME Vikey)
+endif()
 target_include_directories(vikey PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_definitions(vikey PRIVATE UNICODE _UNICODE VIKEY_VERSION="${VIKEY_VERSION}")
 target_link_libraries(vikey PRIVATE vikey_engine user32 shell32 gdi32 advapi32 imm32 psapi ole32 oleaut32 comctl32 gdiplus winhttp winmm d2d1 dwrite dwmapi normaliz)
