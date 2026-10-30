@@ -4,6 +4,7 @@
 # The test binaries land where Tools/autoswitch/check.sh and the Python scripts expect them.
 cmake_minimum_required(VERSION 3.21)
 project(Vikey LANGUAGES C CXX)
+enable_testing()
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 if(NOT CMAKE_BUILD_TYPE)
