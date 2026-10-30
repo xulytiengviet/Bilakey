@@ -6,8 +6,13 @@ IDR_SOUND_VI RCDATA "Sounds/SwitchToVietnamese.wav"
 IDR_SOUND_EN RCDATA "Sounds/SwitchToEnglish.wav"
 IDR_EMOJI_JSON RCDATA "../../App/Resources/Emoji.json"
 VS_VERSION_INFO VERSIONINFO
+#ifdef BILAKEY_BUILD
+ FILEVERSION 0,0,1,0
+ PRODUCTVERSION 0,0,1,0
+#else
  FILEVERSION 1,0,14,0
  PRODUCTVERSION 1,0,14,0
+#endif
  FILEOS 0x40004L
  FILETYPE 0x1L
 BEGIN
@@ -15,13 +20,33 @@ BEGIN
   BEGIN
     BLOCK "040904b0"
     BEGIN
+#ifdef BILAKEY_BUILD
+      VALUE "CompanyName", "BilaKey contributors"
+#else
       VALUE "CompanyName", "Tony Dinh"
+#endif
+#ifdef BILAKEY_BUILD
+      VALUE "FileDescription", "BilaKey - Anh / Việt / CVNSS4.0"
+#else
       VALUE "FileDescription", "Vikey - Vietnamese typing"
+#endif
       VALUE "FileVersion", VIKEY_VERSION
+#ifdef BILAKEY_BUILD
+      VALUE "InternalName", "BilaKey"
+#else
       VALUE "InternalName", "Vikey"
+#endif
       VALUE "LegalCopyright", "GPL-3.0. Based on OpenKey by Tuyen Mai."
+#ifdef BILAKEY_BUILD
+      VALUE "OriginalFilename", "BilaKey.exe"
+#else
       VALUE "OriginalFilename", "Vikey.exe"
+#endif
+#ifdef BILAKEY_BUILD
+      VALUE "ProductName", "BilaKey"
+#else
       VALUE "ProductName", "Vikey"
+#endif
       VALUE "ProductVersion", VIKEY_VERSION
     END
   END

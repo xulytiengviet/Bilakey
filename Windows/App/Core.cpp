@@ -2,6 +2,7 @@
 #include "Site.h"
 #include "KeyMap.h"
 #include "Prefs.h"
+#include "Cvnss.h"
 #include "Engine.h"
 #include <imm.h>
 #ifndef IMC_GETOPENSTATUS
@@ -470,6 +471,45 @@ static bool HandleEnglishKeyForAutoSwitch() {
         if (count == _undoneCount && !memcmp(_enKeys, _undoneKeys, count * sizeof(Uint32))) checked = false;
         if (wordEnd) _undoneCount = 0;
     }
+    // BilaKey 0.0.1: third-script recognition happens before EN->VI Telex
+    // auto-switch, so CVNSS codes are not accidentally fed to Telex.
+    // Only complete, unambiguous ASCII words; leave secure/code contexts untouched.
+    if (checked && wordEnd && prefs::getInt(L"BilaKey3AutoDetect", 1) &&
+        !AutoSwitchPaused() && !site::focusedIsPassword() &&
+        (_keycode == KEY_SPACE || _keycode == KEY_RETURN || _keycode == KEY_ENTER)) {
+        const std::wstring app = _frontApp;
+        const bool skip = app.find(L"Code") != std::wstring::npos ||
+            app.find(L"Terminal") != std::wstring::npos ||
+            app.find(L"cmd.exe") != std::wstring::npos ||
+            app.find(L"powershell") != std::wstring::npos ||
+            app.find(L"devenv.exe") != std::wstring::npos;
+        if (!skip && count >= 3 && count <= 48) {
+            std::wstring word;
+            for (int i = 0; i < count; ++i) {
+                Uint16 ch = keyCodeToCharacter(_enKeys[i]);
+                if (ch < 'a' || ch > 'z') {
+                    if (ch >= 'A' && ch <= 'Z') ch = Uint16(ch + 32);
+                    else { word.clear(); break; }
+                }
+                word.push_back(wchar_t(ch));
+            }
+            if (!word.empty()) {
+                auto decision = bilakey::cvnss::classify(word,
+                    prefs::getInt(L"BilaKey3TargetCvns", 0) != 0);
+                if (decision.script == bilakey::cvnss::Script::Cvns &&
+                    decision.output != word) {
+                    batchBackspaces(count);
+                    batchText(decision.output.c_str(), int(decision.output.size()));
+                    WORD key = vkOf(_keycode);
+                    if (key) batchKey(key, shift);
+                    flushBatch();
+                    _enPrevN = 0;
+                    _autoFixUndo.active = false;
+                    return true;
+                }
+            }
+        }
+    }
     const Uint32* previous[2] = {_enPrevKeys[0], _enPrevKeys[1]};
     vAutoSwitchPrevRestored = _enPrevRestored && _enPrevN >= 1;
     bool converted = checked && vAutoSwitchCheckEnglishWord(_enKeys, count, previous, _enPrevCounts, _enPrevN);
@@ -540,7 +580,7 @@ static LRESULT CALLBACK keyboardHook(int nCode, WPARAM wParam, LPARAM lParam) {
     TLNoteKey(_keycode, _flag);
 
     if (vLanguage == 0) {
-        if (vAutoSwitchByTyping && HandleEnglishKeyForAutoSwitch()) return 1;
+        if ((vAutoSwitchByTyping || prefs::getInt(L"BilaKey3AutoDetect", 1)) && HandleEnglishKeyForAutoSwitch()) return 1;
         return CallNextHookEx(_kbHook, nCode, wParam, lParam);
     }
     if (vOtherLanguage && (_otherInputLanguage || imeComposing())) return CallNextHookEx(_kbHook, nCode, wParam, lParam);

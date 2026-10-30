@@ -3,7 +3,13 @@
 
 namespace vikey { namespace prefs {
 
+#ifdef BILAKEY_BUILD
+static const wchar_t* ROOT = L"Software\\BilaKey";
+static const wchar_t* APP = L"BilaKey";
+#else
 static const wchar_t* ROOT = L"Software\\Vikey";
+static const wchar_t* APP = L"Vikey";
+#endif
 
 static HKEY open(REGSAM access) {
     HKEY h = nullptr;
@@ -72,7 +78,7 @@ void remove(const wchar_t* key) {
 std::wstring appDataDir() {
     wchar_t path[MAX_PATH] = {0};
     SHGetFolderPathW(nullptr, CSIDL_LOCAL_APPDATA, nullptr, 0, path);
-    std::wstring dir = std::wstring(path) + L"\\Vikey";
+    std::wstring dir = std::wstring(path) + (std::wstring(L"\\") + APP);
     CreateDirectoryW(dir.c_str(), nullptr);
     return dir;
 }
@@ -81,7 +87,7 @@ static const wchar_t* RUN_KEY = L"Software\\Microsoft\\Windows\\CurrentVersion\\
 
 bool launchAtLogin() {
     HKEY h; if (RegOpenKeyExW(HKEY_CURRENT_USER, RUN_KEY, 0, KEY_READ, &h) != ERROR_SUCCESS) return false;
-    DWORD size = 0; bool ok = RegQueryValueExW(h, L"Vikey", nullptr, nullptr, nullptr, &size) == ERROR_SUCCESS;
+    DWORD size = 0; bool ok = RegQueryValueExW(h, APP, nullptr, nullptr, nullptr, &size) == ERROR_SUCCESS;
     RegCloseKey(h); return ok;
 }
 
@@ -90,8 +96,8 @@ void setLaunchAtLogin(bool on) {
     if (on) {
         wchar_t exe[MAX_PATH]; GetModuleFileNameW(nullptr, exe, MAX_PATH);
         std::wstring cmd = L"\"" + std::wstring(exe) + L"\"";
-        RegSetValueExW(h, L"Vikey", 0, REG_SZ, (const BYTE*)cmd.c_str(), (DWORD)((cmd.size() + 1) * sizeof(wchar_t)));
-    } else RegDeleteValueW(h, L"Vikey");
+        RegSetValueExW(h, APP, 0, REG_SZ, (const BYTE*)cmd.c_str(), (DWORD)((cmd.size() + 1) * sizeof(wchar_t)));
+    } else RegDeleteValueW(h, APP);
     RegCloseKey(h);
 }
 
