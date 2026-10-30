@@ -497,7 +497,7 @@ static bool HandleEnglishKeyForAutoSwitch() {
                 auto decision = bilakey::cvnss::classify(word,
                     prefs::getInt(L"BilaKey3TargetCvns", 0) != 0);
                 if (decision.script == bilakey::cvnss::Script::Cvns &&
-                    decision.output != word && !decision.ambiguous) {
+                    decision.output != word) {
                     batchBackspaces(count);
                     batchText(decision.output.c_str(), int(decision.output.size()));
                     WORD key = vkOf(_keycode);
