@@ -21,7 +21,7 @@ static const UINT WM_TRAY = WM_APP + 1;
 static const UINT WM_VIKEY_SETLANG = WM_APP + 2;   // tests: wParam = language (0 English, 1 Vietnamese)
 static const UINT WM_VIKEY_EMOJI = WM_APP + 5;     // the emoji hotkey, posted from the keyboard hook
 static const UINT TIMER_FLUSH = 1, TIMER_SITE = 2;
-enum { ID_VIET = 100, ID_ENG, ID_SETTINGS, ID_AUTOSWITCH, ID_UPDATE, ID_LOGTOGGLE, ID_LOG, ID_ABOUT, ID_QUIT, ID_FEEDBACK, ID_GUIDE };
+enum { ID_VIET = 100, ID_ENG, ID_SETTINGS, ID_AUTOSWITCH, ID_UPDATE, ID_LOGTOGGLE, ID_LOG, ID_ABOUT, ID_QUIT, ID_FEEDBACK, ID_GUIDE, ID_CVNSS };
 
 static HWND _hwnd; static NOTIFYICONDATAW _nid = {};
 static HICON _iconV, _iconE;
@@ -55,7 +55,11 @@ static bool darkTaskbar() {
 }
 static void updateTray(int lang) {
     _nid.hIcon = lang ? _iconV : _iconE;
+    #ifdef BILAKEY_BUILD
+    wcscpy_s(_nid.szTip, lang ? L"BilaKey – Tiếng Việt" : L"BilaKey – English");
+#else
     wcscpy_s(_nid.szTip, lang ? L"Vikey – Tiếng Việt" : L"Vikey – English");
+#endif
     Shell_NotifyIconW(NIM_MODIFY, &_nid);
 }
 static void toggle(const wchar_t* key, int fallback) { vikey::prefs::setInt(key, !vikey::prefs::getInt(key, fallback)); vikey::core::reloadSettings(); }
@@ -70,12 +74,17 @@ static void showMenu() {
     HMENU m = CreatePopupMenu();
     AppendMenuW(m, MF_STRING | (core::language() ? MF_CHECKED : 0), ID_VIET, (L"Tiếng Việt\t" + hotkeyLabel()).c_str());
     AppendMenuW(m, MF_STRING | (prefs::getInt(L"AutoSwitchByTyping", 1) ? MF_CHECKED : 0), ID_AUTOSWITCH, L"Tự chuyển Anh/Việt");
+#ifdef BILAKEY_BUILD
+    AppendMenuW(m, MF_STRING | (prefs::getInt(L"BilaKey3AutoDetect", 1) ? MF_CHECKED : 0), ID_CVNSS, L"Tự nhận diện CVNSS4.0");
+#endif
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(m, MF_STRING, ID_SETTINGS, L"Mở Vikey…");
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(m, MF_STRING, ID_GUIDE, L"Hướng dẫn…");
     AppendMenuW(m, MF_STRING, ID_FEEDBACK, L"Gửi góp ý…");
+    #ifndef BILAKEY_BUILD
     AppendMenuW(m, MF_STRING, ID_UPDATE, L"Kiểm tra cập nhật…");
+#endif
     AppendMenuW(m, MF_STRING, ID_ABOUT, L"Giới thiệu Vikey");
     HMENU dbg = CreatePopupMenu();
     AppendMenuW(dbg, MF_STRING | (prefs::getInt(L"TypingLogEnabled", 0) ? MF_CHECKED : 0), ID_LOGTOGGLE, L"Ghi nhật ký gõ");
@@ -97,6 +106,7 @@ static LRESULT CALLBACK wndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         switch (LOWORD(wp)) {
         case ID_VIET: core::setLanguageByUser(!core::language()); break;
         case ID_AUTOSWITCH: toggle(L"AutoSwitchByTyping", 1); break;
+    case ID_CVNSS: toggle(L"BilaKey3AutoDetect", 1); break;
         case ID_SETTINGS: ui::showSettings(GetModuleHandleW(nullptr), false); break;
         case ID_UPDATE: updater::checkNow(h); break;
         case ID_ABOUT: ui::showAbout(GetModuleHandleW(nullptr)); break;
@@ -104,7 +114,11 @@ static LRESULT CALLBACK wndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         case ID_GUIDE: ui::showOnboarding(GetModuleHandleW(nullptr)); break;
         case ID_LOGTOGGLE: toggle(L"TypingLogEnabled", 0); break;
         case ID_LOG: ui::showTypingLog(GetModuleHandleW(nullptr)); break;
-        case ID_QUIT: updater::installPendingAndQuit(); DestroyWindow(h); break;
+        case ID_QUIT:
+#ifndef BILAKEY_BUILD
+            updater::installPendingAndQuit();
+#endif
+            DestroyWindow(h); break;
         }
         return 0;
     case WM_APP + 3: ui::showSettings(GetModuleHandleW(nullptr), false); return 0;
@@ -119,21 +133,33 @@ static LRESULT CALLBACK wndProc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
 }
 
 int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
-    HANDLE single = CreateMutexW(nullptr, TRUE, L"Local\\VikeyRunning");
+    HANDLE single = CreateMutexW(nullptr, TRUE, 
+#ifdef BILAKEY_BUILD
+        L"Local\\BilaKeyRunning"
+#else
+        L"Local\\VikeyRunning"
+#endif
+        );
     if (GetLastError() == ERROR_ALREADY_EXISTS) {   // already running: opening the app again shows its window, like on macOS
         HWND t = FindWindowW(L"VikeyTray", nullptr);
         if (t) { DWORD pid = 0; GetWindowThreadProcessId(t, &pid); AllowSetForegroundWindow(pid); PostMessageW(t, WM_APP + 3, 0, 0); }   // our foreground right goes to the running Vikey: its window comes to the front
         return 0;
     }
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+    #ifndef BILAKEY_BUILD
     if (vikey::updater::installPendingAtLaunch()) return 0;   // an update downloaded earlier installs now and relaunches Vikey
+#endif
     vikey::prefs::migrateFromOpenKey();
     WNDCLASSW wc = {}; wc.lpfnWndProc = wndProc; wc.hInstance = inst; wc.lpszClassName = L"VikeyTray";
     RegisterClassW(&wc);
     _hwnd = CreateWindowW(L"VikeyTray", L"Vikey", 0, 0, 0, 0, 0, HWND_MESSAGE, nullptr, inst, nullptr);
     bool dark = darkTaskbar(); _iconV = makeIcon(L'V', dark); _iconE = makeIcon(L'E', dark);
     _nid.cbSize = sizeof(_nid); _nid.hWnd = _hwnd; _nid.uID = 1; _nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP; _nid.uCallbackMessage = WM_TRAY; _nid.hIcon = _iconV;
+    #ifdef BILAKEY_BUILD
+    wcscpy_s(_nid.szTip, L"BilaKey");
+#else
     wcscpy_s(_nid.szTip, L"Vikey");
+#endif
     Shell_NotifyIconW(NIM_ADD, &_nid);
     vikey::core::setLanguageObserver([](int lang) { updateTray(lang); vikey::ui::languageChanged(lang); });
     if (!vikey::core::start()) { MessageBoxW(nullptr, L"Không cài được bộ bắt phím (SetWindowsHookEx).", L"Vikey", MB_ICONERROR); return 1; }
@@ -142,7 +168,9 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
     vikey::core::setEmojiHotkeyHandler([] { PostMessageW(_hwnd, WM_VIKEY_EMOJI, 0, 0); });   // not inside the hook: opening can take a moment
     if (!vikey::prefs::has(L"FirstRunDone")) vikey::ui::showSettings(inst, true);
     SetTimer(_hwnd, TIMER_FLUSH, 10000, nullptr);
+    #ifndef BILAKEY_BUILD
     vikey::updater::start(_hwnd);
+#endif
     SetTimer(_hwnd, TIMER_SITE, 1000, nullptr);   // per-website memory: the active tab can change without any event we see
     MSG msg; while (GetMessageW(&msg, nullptr, 0, 0)) { TranslateMessage(&msg); DispatchMessageW(&msg); }
     ReleaseMutex(single); CloseHandle(single);
