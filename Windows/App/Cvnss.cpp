@@ -207,7 +207,9 @@ Decision classify(const std::wstring& raw,bool targetCode) {
     bool recognized=false,ambiguous=false;
     auto decoded=decode(raw,&recognized,&ambiguous);
     d.ambiguous=ambiguous;
-    if(!recognized||ambiguous||decoded==raw||!hasVietnameseMark(decoded))return d;
+    if(!recognized||decoded==raw||!hasVietnameseMark(decoded))return d;
+    // Longer context permits a canonical choice among i/y spelling aliases.
+    // Short ambiguous syllables are left as English to avoid false positives.
     if(raw.size()<4 && lower(raw)!=L"iwy")return d;
     d.script=Script::Cvns;d.unicode=decoded;d.code=raw;
     d.output=targetCode?raw:decoded;
