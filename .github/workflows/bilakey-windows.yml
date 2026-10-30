@@ -1,0 +1,126 @@
+name: BilaKey Windows 0.0.1
+on:
+  pull_request:
+    paths: ['Windows/**', '.github/workflows/bilakey-windows.yml']
+  push:
+    branches: [main]
+    paths: ['Windows/**', '.github/workflows/bilakey-windows.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-windows:
+    name: Native build and CTest ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            arch: x64
+          - runner: windows-11-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.arch }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Ensure Ninja
+        shell: pwsh
+        run: |
+          if (-not (Get-Command ninja -ErrorAction SilentlyContinue)) {
+            choco install ninja -y --no-progress
+          }
+      - name: Build native Windows app and CVNSS tests
+        shell: pwsh
+        run: |
+          cmake -S Windows -B Windows/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DVIKEY_VERSION=0.0.1 -DBILAKEY_BRAND=ON
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build Windows/build --target vikey bilakey_cvnss_test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ctest --test-dir Windows/build -C Release -R "^bilakey_cvnss$" --output-on-failure
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Engine golden regression
+        shell: pwsh
+        run: |
+          pwsh Windows/check.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bilakey-${{ matrix.arch }}-binary
+          path: Windows/build/App/BilaKey.exe
+          if-no-files-found: error
+
+  installer:
+    name: Package installers x64 and ARM64
+    needs: native-windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: bilakey-*-binary
+          path: artifacts
+      - name: Compile Inno Setup and portable packages
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory dist -Force | Out-Null
+          $iscc = Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path $iscc)) { throw "Inno Setup 6 ISCC.exe is missing" }
+          foreach ($arch in @("x64","arm64")) {
+            $folder = (Resolve-Path "artifacts/bilakey-$arch-binary").Path
+            if (-not (Test-Path "$folder/BilaKey.exe")) { throw "Missing $arch executable" }
+            & $iscc "/DVersion=0.0.1" "/DArch=$arch" "/DSrc=$folder" Windows/installer/BilaKey.iss
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            Copy-Item "Windows/installer/out/BilaKey-0.0.1-$arch-Setup.exe" dist/
+            New-Item -ItemType Directory "stage/$arch" -Force | Out-Null
+            Copy-Item "$folder/BilaKey.exe", "LICENSE", "Windows/BilaKey3/README.md" "stage/$arch/"
+            Compress-Archive -Path "stage/$arch/*" -DestinationPath "dist/BilaKey-0.0.1-$arch-portable.zip" -Force
+          }
+          $lines = Get-ChildItem dist -File | ForEach-Object {
+            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
+            "$hash  $($_.Name)"
+          }
+          $lines | Set-Content -Path dist/SHA256SUMS.txt -Encoding utf8
+          Get-ChildItem dist -File | Select-Object Name, Length
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bilakey-0.0.1-installers
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    name: GitHub Release v0.0.1 after tests
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: installer
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: bilakey-0.0.1-installers
+          path: dist
+      - name: Release only after successful Windows builds and CTest
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view v0.0.1 -R $env:GITHUB_REPOSITORY 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "Existing v0.0.1 release retained, no overwrite"
+            exit 0
+          }
+          $assets = @(Get-ChildItem dist -File | ForEach-Object FullName)
+          if ($assets.Count -lt 5) { throw "Release assets missing" }
+          gh release create v0.0.1 $assets 
+            -R $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA 
+            --title "BilaKey 0.0.1 — Windows x64/ARM64" 
+            --notes "Native Windows C++ preview for mixed English, Vietnamese Telex and CVNSS4.0 typing. Windows CI and regression tests must pass. Unsigned preview; Windows SmartScreen may warn. 99.8% accuracy is not measured. Physical PC testing still required. GPL-3.0; credits Vikey/OpenKey."
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
